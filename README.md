@@ -5,14 +5,26 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.2-777bb4.svg)](composer.json)
 
-Deterministic fatal error and uncaught exception boundary for JSON APIs,
-returning a standard JSON envelope instead of PHP's HTML error page.
+A best-effort, last-resort JSON envelope for the PHP fatals and uncaught
+exceptions your framework's own error handling never gets a chance to see —
+not a replacement for it.
 
 A fatal — a timeout, a memory limit, an autoload failure — is not a
-`Throwable`, so no `try`/`catch` reaches it. Left unhandled, PHP writes an
-HTML error page into a response body the client expected as JSON. This
-library installs an exception handler and a shutdown handler that both
-answer with the same JSON contract.
+`Throwable`, so no `try`/`catch` reaches it, and that includes the
+`try`/`catch` a PSR-15 pipeline or a framework's own error middleware
+wraps around dispatch. Left unhandled, PHP writes an HTML error page into a
+response body the client expected as JSON. This library installs an
+exception handler and a shutdown handler that both answer with the same
+JSON contract, so that page never reaches the client.
+
+**"Best-effort" is deliberate, not modesty.** `register_shutdown_function()`
+observes some fatals — `memory_limit`, `max_execution_time`, a parse error
+— because PHP still runs a termination phase for them. It observes nothing
+from a SIGKILL, an OOM-killed process, a segfault, or the infrastructure
+simply terminating the worker: PHP itself never resumes to run the
+shutdown function in those cases. This library answers what PHP's
+termination phase gives it a chance to answer — no library can promise
+more than that against a process that never comes back.
 
 ## Installation
 
@@ -100,7 +112,10 @@ Full, runnable-style snippets for common setups live in
   point of a plain PHP script.
 - [`examples/psr3-logger.php`](examples/psr3-logger.php) — wiring a PSR-3
   logger (Monolog, or any other implementation).
-- [`examples/slim.php`](examples/slim.php) — a Slim 4 application.
+- [`examples/slim.php`](examples/slim.php) — a Slim 4 application, with a
+  `/crash` route (a normal exception, answered by Slim's own error
+  middleware) next to a `/fatal` route (a genuine, reproducible PHP fatal,
+  answered by this library instead) — the split this library is for.
 - [`examples/sse-interception.php`](examples/sse-interception.php) —
   intercepting a fatal mid-stream on an active Server-Sent Events response.
 
