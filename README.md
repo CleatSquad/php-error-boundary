@@ -119,6 +119,36 @@ written.
 construction — that's what lets it catch a fatal PHP itself doesn't let you
 `catch`. Call `install()` once, at the entry point.
 
+## Limits
+
+**This is not a PSR-15 middleware, and it cannot be one.** PSR-15
+(`MiddlewareInterface`) relies on the call stack staying alive — a
+`try`/`catch` around `$handler->handle($request)` — to intercept an error.
+A PHP fatal (`E_ERROR`, a `memory_limit` exhaustion, a
+`max_execution_time` timeout) is not a `Throwable`: no `try`/`catch`
+anywhere, PSR-15 pipeline included, ever sees it. PHP terminates execution
+immediately, and the call stack — the pipeline itself — is gone with it.
+The only hook PHP leaves after that is `register_shutdown_function()`, a
+process-global termination phase with no pipeline left to resume. That's a
+constraint of the language, not a design choice: no amount of engineering
+turns "catch a fatal" into a composable middleware object.
+
+Concretely:
+
+- For exceptions your framework's dispatch actually catches, its own
+  PSR-15 error middleware (Slim's `ErrorMiddleware`, Mezzio's, etc.)
+  already handles them — this library does not replace that.
+- This library exists for what that middleware structurally cannot see:
+  a fatal that kills the process before any middleware, PSR-15 or not,
+  gets a chance to run.
+- No PSR-7 either: by the time the shutdown handler fires, the
+  framework's own response-emission machinery may no longer be usable,
+  so `emit()` writes directly with `header()`/`echo` rather than building
+  a `ResponseInterface` nothing may be left to send.
+- PSR-3 (`LoggerInterface`) is supported for the optional logger — that
+  boundary is a plain interface call, not something the language
+  restricts.
+
 ## Testing
 
 ```bash
