@@ -51,6 +51,31 @@ final class MyMapper implements ErrorResponseMapperInterface
 ErrorBoundary::install(new MyMapper());
 ```
 
+### Send the uncaught-exception line through your own logger
+
+```php
+ErrorBoundary::install(null, $psr3Logger);
+```
+
+When a PSR-3 `LoggerInterface` is supplied, the uncaught-exception line goes
+through `$logger->error()` (the exception is passed as `['exception' => $e]`
+context) instead of `error_log()`. Fatals caught by the shutdown handler are
+not logged here — PHP has already written them to the error log itself by
+the time it fires.
+
+### Uninstall
+
+```php
+ErrorBoundary::uninstall();
+```
+
+Restores PHP's default exception handler and makes the boundary inert for
+the shutdown handler already registered (PHP has no
+`unregister_shutdown_function()`, so it stays registered but becomes a
+no-op). Clears the mapper, logger and shutdown interceptor, so a later
+`install()` starts clean. Useful in tests, or when handing control back to
+another error-handling system for the rest of the process.
+
 ### Intercept before the standard response is emitted
 
 Useful for a response format the boundary doesn't own by default — an

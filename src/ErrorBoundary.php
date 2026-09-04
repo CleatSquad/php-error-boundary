@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CleatSquad\ErrorBoundary;
 
+use Psr\Log\LoggerInterface;
 use Throwable;
 
 /**
@@ -19,8 +20,10 @@ final class ErrorBoundary
     public const FATAL_LEVELS = E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR;
 
     private static ?ErrorResponseMapperInterface $mapper = null;
+    private static ?LoggerInterface $logger = null;
     /** @var (callable(array{type: int, message: string, file?: string, line?: int}): bool)|null */
     private static mixed $shutdownInterception = null;
+    private static bool $installed = false;
 
     public static function setMapper(ErrorResponseMapperInterface $mapper): void
     {
@@ -38,24 +41,44 @@ final class ErrorBoundary
         self::$shutdownInterception = $interception;
     }
 
-    public static function install(?ErrorResponseMapperInterface $mapper = null): void
+    /**
+     * @param ?LoggerInterface $logger Receives the uncaught-exception line this
+     *                                 boundary would otherwise send to error_log().
+     *                                 Fatals caught by the shutdown handler are not
+     *                                 logged here: PHP has already written them to
+     *                                 the error log itself by the time it fires.
+     */
+    public static function install(?ErrorResponseMapperInterface $mapper = null, ?LoggerInterface $logger = null): void
     {
         if ($mapper !== null) {
             self::$mapper = $mapper;
         }
+        if ($logger !== null) {
+            self::$logger = $logger;
+        }
+        self::$installed = true;
 
         // The body belongs to the response, never to PHP's error reporting.
         ini_set('display_errors', '0');
         ini_set('log_errors', '1');
 
         set_exception_handler(static function (Throwable $e): void {
-            error_log(sprintf(
+            if (!self::$installed) {
+                return;
+            }
+
+            $message = sprintf(
                 'Uncaught %s: %s in %s:%d',
                 $e::class,
                 $e->getMessage(),
                 $e->getFile(),
                 $e->getLine()
-            ));
+            );
+            if (self::$logger !== null) {
+                self::$logger->error($message, ['exception' => $e]);
+            } else {
+                error_log($message);
+            }
 
             $error = [
                 'type' => E_ERROR,
@@ -73,6 +96,10 @@ final class ErrorBoundary
         });
 
         register_shutdown_function(static function (): void {
+            if (!self::$installed) {
+                return;
+            }
+
             $error = error_get_last();
             if ($error === null || ($error['type'] & self::FATAL_LEVELS) === 0) {
                 return;
@@ -85,6 +112,27 @@ final class ErrorBoundary
             [$status, $payload] = (self::$mapper ?? new DefaultErrorResponseMapper())->map($error);
             self::emit($status, $payload);
         });
+    }
+
+    /**
+     * Restores PHP's default exception handler and marks this boundary inert
+     * for the shutdown function already registered — PHP has no
+     * `unregister_shutdown_function()`, so the callback stays registered but
+     * becomes a no-op. A later `install()` reactivates it. Mapper, logger and
+     * shutdown interceptor are cleared so a fresh `install()` starts clean.
+     */
+    public static function uninstall(): void
+    {
+        self::$installed = false;
+        self::$mapper = null;
+        self::$logger = null;
+        self::$shutdownInterception = null;
+        restore_exception_handler();
+    }
+
+    public static function isInstalled(): bool
+    {
+        return self::$installed;
     }
 
     /**

@@ -8,6 +8,8 @@ use CleatSquad\ErrorBoundary\DefaultErrorResponseMapper;
 use CleatSquad\ErrorBoundary\ErrorBoundary;
 use CleatSquad\ErrorBoundary\ErrorResponseMapperInterface;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use RuntimeException;
 
 final class ErrorBoundaryTest extends TestCase
 {
@@ -74,5 +76,89 @@ final class ErrorBoundaryTest extends TestCase
 
         $this->assertStringNotContainsString('/app/', $payload['error']['message']);
         $this->assertStringNotContainsString('RetryingDriver', $payload['error']['message']);
+    }
+
+    protected function tearDown(): void
+    {
+        // install() leaves a process-global exception handler behind; every
+        // test that calls it must not leak into the next one.
+        ErrorBoundary::uninstall();
+        ErrorBoundary::setMapper(new DefaultErrorResponseMapper());
+    }
+
+    public function testInstallReportsItselfAsInstalled(): void
+    {
+        $this->assertFalse(ErrorBoundary::isInstalled());
+
+        ErrorBoundary::install();
+
+        $this->assertTrue(ErrorBoundary::isInstalled());
+    }
+
+    public function testUninstallReportsItselfAsNotInstalled(): void
+    {
+        ErrorBoundary::install();
+        ErrorBoundary::uninstall();
+
+        $this->assertFalse(ErrorBoundary::isInstalled());
+    }
+
+    public function testInstalledLoggerReceivesTheUncaughtExceptionLine(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('error')
+            ->with(
+                $this->stringContains('Uncaught RuntimeException: boom'),
+                $this->arrayHasKey('exception')
+            );
+
+        ErrorBoundary::install(null, $logger);
+        $handler = set_exception_handler(static function (): void {
+        });
+        restore_exception_handler();
+        if (!is_callable($handler)) {
+            self::fail('set_exception_handler() did not return a callable.');
+        }
+
+        ob_start();
+        $handler(new RuntimeException('boom'));
+        ob_end_clean();
+    }
+
+    public function testWithNoLoggerTheHandlerStillAnswersWithoutThrowing(): void
+    {
+        ErrorBoundary::install();
+        $handler = set_exception_handler(static function (): void {
+        });
+        restore_exception_handler();
+        if (!is_callable($handler)) {
+            self::fail('set_exception_handler() did not return a callable.');
+        }
+
+        ob_start();
+        $handler(new RuntimeException('no logger configured'));
+        $output = ob_end_clean();
+
+        $this->assertTrue($output !== false);
+    }
+
+    public function testUninstallMakesTheCapturedExceptionHandlerInert(): void
+    {
+        ErrorBoundary::install();
+        $handler = set_exception_handler(static function (): void {
+        });
+        restore_exception_handler();
+        if (!is_callable($handler)) {
+            self::fail('set_exception_handler() did not return a callable.');
+        }
+
+        ErrorBoundary::uninstall();
+
+        ob_start();
+        $handler(new RuntimeException('should be ignored'));
+        $output = ob_get_clean();
+
+        $this->assertSame('', $output);
     }
 }
