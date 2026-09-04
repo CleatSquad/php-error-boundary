@@ -1,5 +1,7 @@
 # PHP Error Boundary
 
+[![Tests](https://github.com/CleatSquad/php-error-boundary/actions/workflows/tests.yml/badge.svg)](https://github.com/CleatSquad/php-error-boundary/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/CleatSquad/php-error-boundary/branch/main/graph/badge.svg)](https://codecov.io/gh/CleatSquad/php-error-boundary)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.2-777bb4.svg)](composer.json)
 
@@ -88,6 +90,19 @@ ErrorBoundary::setShutdownInterception(function (array $error): bool {
     return false;
 });
 ```
+
+## Examples
+
+Full, runnable-style snippets for common setups live in
+[`examples/`](examples/):
+
+- [`examples/basic.php`](examples/basic.php) — installing at the entry
+  point of a plain PHP script.
+- [`examples/psr3-logger.php`](examples/psr3-logger.php) — wiring a PSR-3
+  logger (Monolog, or any other implementation).
+- [`examples/slim.php`](examples/slim.php) — a Slim 4 application.
+- [`examples/sse-interception.php`](examples/sse-interception.php) —
+  intercepting a fatal mid-stream on an active Server-Sent Events response.
 
 ## Design notes
 
