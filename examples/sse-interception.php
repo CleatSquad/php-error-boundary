@@ -38,9 +38,15 @@ function streamEvents(): void
     echo 'data: ' . json_encode(['step' => 1]) . "\n\n";
     flush();
 
-    // Simulate a bug partway through the stream.
-    $state = null;
-    echo 'data: ' . json_encode(['step' => $state->next()]) . "\n\n";
+    // A genuine PHP fatal, reproducible without external tooling: lower the
+    // memory limit for this request only, then exceed it. Not a Throwable —
+    // this is the shutdown handler firing, not the exception handler, which
+    // is what setShutdownInterception() above is actually named for.
+    ini_set('memory_limit', '2M');
+    $buffer = '';
+    while (true) {
+        $buffer .= str_repeat('x', 1_000_000);
+    }
 }
 
 streamEvents();

@@ -1,6 +1,6 @@
 {
     "name": "cleatsquad/php-error-boundary",
-    "description": "Deterministic fatal error and uncaught exception boundary returning standard JSON envelopes",
+    "description": "Best-effort JSON envelope for PHP fatals and uncaught exceptions that never reach your framework's own error handling",
     "type": "library",
     "license": "MIT",
     "keywords": [

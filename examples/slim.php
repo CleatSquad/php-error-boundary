@@ -1,11 +1,25 @@
 <?php
 
 /**
- * Slim 4 already has its own error middleware for caught exceptions
- * thrown inside a route — this boundary is not a replacement for that.
- * Its job is what Slim's middleware cannot reach: a PHP fatal (a timeout,
- * a memory limit) that never propagates as a Throwable at all, and would
- * otherwise write an HTML error page into a JSON API's response body.
+ * Slim 4 already has its own error middleware for exceptions thrown inside
+ * a route — this boundary is not a replacement for that. Its job is what
+ * Slim's middleware structurally cannot reach: a PHP fatal, which is not a
+ * Throwable and so never enters any try/catch, PSR-15 pipeline included.
+ *
+ *   Request
+ *      |
+ *      v
+ *   Slim middleware stack
+ *      |
+ *      +-- Throwable  --> Slim's own ErrorMiddleware
+ *      |
+ *      +-- PHP fatal  --> (the pipeline is already gone — nothing here
+ *                          runs) --> ErrorBoundary's shutdown handler
+ *                                    --> JSON fallback
+ *
+ * Two routes below make that split concrete: /crash is a normal exception,
+ * answered by Slim; /fatal is a genuine, uncatchable fatal, answered by
+ * this library instead.
  *
  * Run it (after `composer require --dev slim/slim slim/psr7` in your own
  * project): php -S localhost:8080 examples/slim.php
@@ -23,6 +37,7 @@ use Slim\Factory\AppFactory;
 ErrorBoundary::install();
 
 $app = AppFactory::create();
+$app->addErrorMiddleware(displayErrorDetails: false, logErrors: true, logErrorDetails: false);
 
 $app->get('/status', function ($request, $response) {
     $response->getBody()->write(json_encode(['status' => 'ok']));
@@ -31,11 +46,22 @@ $app->get('/status', function ($request, $response) {
 });
 
 $app->get('/crash', function () {
-    // A memory_limit exhaustion here (not simulated — genuinely uncatchable)
-    // is exactly the case Slim's own error middleware cannot see coming:
-    // it is a PHP fatal, not a Throwable. ErrorBoundary's shutdown handler
-    // answers with the same JSON envelope regardless.
-    throw new RuntimeException('Unreachable in this example — illustrates where the boundary sits.');
+    // A Throwable, thrown inside the pipeline: Slim's own ErrorMiddleware
+    // catches this. ErrorBoundary never sees it — nothing to demonstrate
+    // here beyond "the normal case is already someone else's job".
+    throw new RuntimeException('Normal exception — Slim answers this one.');
+});
+
+$app->get('/fatal', function () {
+    // A genuine PHP fatal, reproducible without external tooling: lower
+    // the memory limit for this request only, then exceed it. Not a
+    // Throwable — Slim's ErrorMiddleware, and any try/catch, is powerless
+    // here. Only ErrorBoundary's shutdown handler answers.
+    ini_set('memory_limit', '2M');
+    $buffer = '';
+    while (true) {
+        $buffer .= str_repeat('x', 1_000_000);
+    }
 });
 
 $app->run();
